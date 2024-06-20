@@ -58,7 +58,10 @@ class PlexWatchlist:
 
         new_items = watchlist_items | rss_items
 
-        items = [MediaItem({"imdb_id": imdb_id, "requested_by": self.key}) for imdb_id in new_items if imdb_id not in self.recurring_items]
+        items = [
+            MediaItem({"imdb_id": imdb_id, "requested_by": self.key})
+            for imdb_id in new_items if imdb_id not in self.recurring_items
+        ]
         for imdb_id in new_items:
             if imdb_id in self.recurring_items:
                 continue
