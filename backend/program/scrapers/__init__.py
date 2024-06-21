@@ -1,6 +1,8 @@
 from datetime import datetime
+from typing import Dict
 
-from program.media.item import MediaItem
+from program.media.item import MediaItem, Season, Show
+from program.media.state import States
 from program.scrapers.annatar import Annatar
 from program.scrapers.jackett import Jackett
 from program.scrapers.knightcrawler import Knightcrawler
@@ -10,8 +12,7 @@ from program.scrapers.prowlarr import Prowlarr
 from program.scrapers.torbox import TorBoxScraper
 from program.scrapers.torrentio import Torrentio
 from program.settings.manager import settings_manager
-from program.media.item import Season, Show
-from program.media.state import States
+from RTN import Torrent, sort_torrents
 from utils.logger import logger
 
 
@@ -38,19 +39,39 @@ class Scraping:
     def validate(self):
         return any(service.initialized for service in self.services.values())
 
+    def yield_incomplete_children(self, item: MediaItem):
+        if isinstance(item, Season):
+            res = [e for e in item.episodes if e.state not in [States.Completed] and e.is_released]
+            return res
+        if isinstance(item, Show):
+            res = [s for s in item.seasons if s.state not in [States.Completed] and s.is_released]
+            return res
+        return None
+
+    def partial_state(self, item: MediaItem) -> bool:
+        if item.state != States.PartiallyCompleted:
+            return False
+        if isinstance(item, Show):
+            sres = [s for s in item.seasons if s.state not in [States.Completed] and s.is_released ]
+            res = []
+            for s in sres:
+                if all(episode.is_released == True and episode.state != States.Completed for episode in s.episodes):
+                    res.append(s)
+                else:
+                    res = res + [e for e in s.episodes if e.is_released == True and e.state != States.Completed]
+            return res
+        if isinstance(item, Season):
+            return [e for e in s.episodes if e.is_release == True]
+        return item
+
     def run(self, item: MediaItem):
         if not self.can_we_scrape(item):
-            if isinstance(item, Season):
-                res = [e for e in item.episodes if e.state not in [States.Completed]]
-                yield res
-                return
-            if isinstance(item, Show):
-                res = [s for s in item.seasons if s.state not in [States.Completed]]
-                yield res
-                return
-            yield None
+            yield self.yield_incomplete_children(item)
             return
-
+        partial_state = self.partial_state(item)
+        if partial_state != False:
+            yield partial_state
+            return
         for service_name, service in self.services.items():
             if service.initialized:
                 try:
@@ -63,17 +84,13 @@ class Scraping:
         item.set("scraped_at", datetime.now())
         item.set("scraped_times", item.scraped_times + 1)
         if not item.get("streams", {}):
-            logger.debug(f"{service_name} Scraped zero items for {item.log_string}")
-            if isinstance(item, Season):
-                res = [e for e in item.episodes if e.state not in [States.Completed]]
-                yield res
-                return
-            if isinstance(item, Show):
-                res = [s for s in item.seasons if s.state not in [States.Completed]]
-                yield res
-                return
-            yield None
+            logger.debug(f"Scraped zero items for {item.log_string}")
+            yield self.yield_incomplete_children(item)
             return
+
+        unsorted_streams: Dict[str, Torrent] = item.get("streams")
+        sorted_streams: Dict[str, Torrent] = sort_torrents(set(unsorted_streams.values()))
+        item.set("streams", sorted_streams)
         yield item
 
     @classmethod

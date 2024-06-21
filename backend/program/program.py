@@ -1,3 +1,4 @@
+import linecache
 import os
 import threading
 import time
@@ -6,7 +7,6 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime
 from multiprocessing import Lock
 from queue import Empty, Queue
-from typing import Union
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from program.content import Listrr, Mdblist, Overseerr, PlexWatchlist, TraktContent
@@ -29,10 +29,6 @@ from .state_transition import process_event
 from .symlink import Symlinker
 from .types import Event, Service
 
-from collections import Counter
-import linecache
-import os
-
 if settings_manager.settings.tracemalloc:
     import tracemalloc
 
@@ -51,7 +47,7 @@ class Program(threading.Thread):
         self.running_items = []
         self.mutex = Lock()
         self.enable_trace = settings_manager.settings.tracemalloc
-        if(self.enable_trace):
+        if self.enable_trace:
             import tracemalloc
             tracemalloc.start()
             self.malloc_time = time.monotonic()-50
@@ -94,6 +90,8 @@ class Program(threading.Thread):
             **self.processing_services,
             **self.downloader_services,
         }
+        self.last_snapshot = tracemalloc.take_snapshot()
+
         self.last_snapshot = tracemalloc.take_snapshot()
 
     def validate(self) -> bool:
@@ -145,6 +143,10 @@ class Program(threading.Thread):
         if not len(self.media_items):
             # Seed initial MIC with Library State
             for item in self.services[SymlinkLibrary].run():
+                if settings_manager.settings.map_metadata:
+                    if isinstance(item, (Movie, Show)):
+                        item = next(self.services[TraktIndexer].run(item))
+                        logger.debug(f"Mapped metadata to {item.type.title()}: {item.log_string}")
                 self.media_items.upsert(item)
             self.media_items.save(str(data_dir_path / "media.pkl"))
 
@@ -242,11 +244,13 @@ class Program(threading.Thread):
     def _pop_event_queue(self, event):
         with self.mutex:
             self.queued_items.remove(event.item)
+
     def _remove_from_running_items(self, item, service_name=""):
         with self.mutex:
             if item in self.running_items:
                 self.running_items.remove(item)
                 logger.log("PROGRAM", f"Item {item.log_string} finished running section {service_name}" )
+
     def add_to_running(self, item, service_name):
         if item not in self.running_items:
             self.running_items.append(item)
@@ -258,6 +262,10 @@ class Program(threading.Thread):
             timeout_seconds = int(
                 os.environ[service.__name__.upper() +"_WORKER_TIMEOUT"]
             ) if service.__name__.upper() + "_WORKER_TIMEOUT" in os.environ else 60 * 3
+            fut_except = future.exception()
+            if fut_except != None:
+                logger.error(f"{fut_except}")
+                self._remove_from_running_items(item)
             for item in future.result(timeout=timeout_seconds):
                 if isinstance(item, list):
                     all_media_items = True
@@ -369,6 +377,9 @@ class Program(threading.Thread):
                     self._submit_job(next_service, item_to_submit)
 
     def stop(self):
+        if not self.running:
+            return
+
         self.running = False
         self.clear_queue()  # Clear the queue when stopping
         if hasattr(self, "executors"):
