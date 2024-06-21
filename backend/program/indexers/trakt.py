@@ -1,7 +1,7 @@
 """Trakt updater module"""
 
 from datetime import datetime, timedelta
-from typing import Generator, List, Optional
+from typing import Generator, List, Optional, Union
 
 from program.media.item import Episode, MediaItem, Movie, Season, Show
 from program.settings.manager import settings_manager
@@ -49,6 +49,7 @@ class TraktIndexer:
             return
         if isinstance(item, Show):
             self._add_seasons_to_show(item, imdb_id)
+        item = self.copy_items(in_item, item)
         item.indexed_at = datetime.now()
         yield item
 
