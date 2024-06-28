@@ -90,8 +90,8 @@ class Program(threading.Thread):
             **self.processing_services,
             **self.downloader_services,
         }
-
-        self.last_snapshot = tracemalloc.take_snapshot()
+        if settings_manager.settings.tracemalloc:
+            self.last_snapshot = tracemalloc.take_snapshot()
 
     def validate(self) -> bool:
         """Validate that all required services are initialized."""
