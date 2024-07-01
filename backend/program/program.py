@@ -19,7 +19,8 @@ from program.media.item import Episode, MediaItem, Movie, Season, Show
 from program.media.state import States
 from program.scrapers import Scraping
 from program.settings.manager import settings_manager
-from program.updaters.plex import PlexUpdater
+from program.settings.models import get_version
+from program.updaters import Updater
 from utils import data_dir_path
 from utils.logger import logger, scrub_logs
 
@@ -48,7 +49,6 @@ class Program(threading.Thread):
         self.mutex = Lock()
         self.enable_trace = settings_manager.settings.tracemalloc
         if self.enable_trace:
-            import tracemalloc
             tracemalloc.start()
             self.malloc_time = time.monotonic()-50
             self.last_snapshot = None
@@ -63,9 +63,9 @@ class Program(threading.Thread):
         }
         self.indexing_services = {TraktIndexer: TraktIndexer()}
         self.processing_services = {
-            Scraping: Scraping(hash_cache),
+            Scraping: Scraping(),
             Symlinker: Symlinker(self.media_items),
-            PlexUpdater: PlexUpdater(),
+            Updater: Updater(),
         }
         self.downloader_services = {
             Debrid: Debrid(hash_cache),
@@ -90,7 +90,8 @@ class Program(threading.Thread):
             **self.processing_services,
             **self.downloader_services,
         }
-        if settings_manager.settings.tracemalloc:
+
+        if self.enable_trace:
             self.last_snapshot = tracemalloc.take_snapshot()
 
     def validate(self) -> bool:
@@ -106,7 +107,14 @@ class Program(threading.Thread):
         )
 
     def start(self):
-        logger.log("PROGRAM", f"Riven v{settings_manager.settings.version} starting!")
+        latest_version = get_version()
+        user_version = settings_manager.settings.version
+
+        if latest_version != user_version:
+            logger.log("PROGRAM", f"Riven v{user_version} starting! (Update Available: v{latest_version})")
+        else:
+            logger.log("PROGRAM", f"Riven v{user_version} starting!")
+
         settings_manager.register_observer(self.initialize_services)
         os.makedirs(data_dir_path, exist_ok=True)
 
