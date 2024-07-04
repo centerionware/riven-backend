@@ -42,11 +42,11 @@ class ItemId:
 class MediaItem(Base):
     """MediaItem class"""
     __tablename__ = "MediaItem"
-    id: Mapped[int] = mapped_column(primary_key=True)
+    _id: Mapped[int] = mapped_column(primary_key=True)
     item_id: Mapped[ItemId] = mapped_column(sqlalchemy.String, nullable=False)
     number: Mapped[Optional[int]] = mapped_column(sqlalchemy.Integer, nullable=True)
     type: Mapped[str] = mapped_column(sqlalchemy.String, nullable=False)
-    requested_at: Mapped[Optional[datetime]] = mapped_column(sqlalchemy.DateTime default=datetime.now())
+    requested_at: Mapped[Optional[datetime]] = mapped_column(sqlalchemy.DateTime, default=datetime.now())
     requested_by: Mapped[Optional[str]] = mapped_column(sqlalchemy.String, nullable=True)
     indexed_at: Mapped[Optional[datetime]] = mapped_column(sqlalchemy.DateTime, nullable=True)
     scraped_at: Mapped[Optional[datetime]] = mapped_column(sqlalchemy.DateTime, nullable=True)
@@ -59,7 +59,6 @@ class MediaItem(Base):
     file: Mapped[Optional[str]] = mapped_column(sqlalchemy.String, nullable=True)
     folder: Mapped[Optional[str]] = mapped_column(sqlalchemy.String, nullable=True)
     is_anime: Mapped[Optional[bool]] = mapped_column(sqlalchemy.Boolean, default=False)
-    parent: Mapped[Optional[Self]] = mapped_column(sqlalchemy.ForeignKey("MediaItem.id"), nullable=True)
     title: Mapped[Optional[str]] = mapped_column(sqlalchemy.String, nullable=True)
     imdb_id: Mapped[Optional[str]] = mapped_column(sqlalchemy.String, nullable=True)
     tvdb_id: Mapped[Optional[str]] = mapped_column(sqlalchemy.String, nullable=True)
@@ -334,8 +333,8 @@ class MediaItem(Base):
 class Movie(MediaItem):
     """Movie class"""
     __tablename__ = "Movie"
-
-
+    _fk_media_item: Mapped["MediaItem"] = mapped_column(sqlalchemy.ForeignKey("MediaItem._id"))
+    movie_id: Mapped[int] = mapped_column(primary_key=True)
     def __init__(self, item):
         self.type = "movie"
         self.file = item.get("file", None)
@@ -351,8 +350,10 @@ class Movie(MediaItem):
 class Season(MediaItem):
     """Season class"""
     __tablename__ = "Season"
-    parent: Mapped[Show] = mapped_column(sqlalchemy.ForeignKey("Show.id"), nullable=True)
-    episodes: Mapped[List[Episode]] = relationship("Episode", back_populates="parent", cascade="all, delete-orphan")
+    season_id: Mapped[int] = mapped_column(primary_key=True)
+    parent: Mapped["Show"] = relationship(back_populates="seasons")
+    episodes: Mapped[List["Episode"]] = relationship("Episode", back_populates="parent", cascade="all, delete-orphan")
+    _fk_media_item: Mapped["MediaItem"] = mapped_column(sqlalchemy.ForeignKey("MediaItem._id"))
     def __init__(self, item):
         self.type = "season"
         self.number = item.get("number", None)
@@ -437,8 +438,9 @@ class Season(MediaItem):
 class Episode(MediaItem):
     """Episode class"""
     __tablename__ = "Episode"
-    parent: Mapped[Season] = mapped_column(sqlalchemy.ForeignKey("Season.id"), nullable=True)
-
+    episode_id: Mapped[int] = mapped_column(primary_key=True)
+    parent: Mapped["Season"] = relationship(back_populates="episodes")
+    _fk_media_item: Mapped["MediaItem"] = mapped_column(sqlalchemy.ForeignKey("MediaItem._id"))
     def __init__(self, item):
         self.type = "episode"
         self.number = item.get("number", None)
@@ -482,7 +484,9 @@ class Episode(MediaItem):
 class Show(MediaItem):
     """Show class"""
     __tablename__ = "Show"
-    seasons: Mapped[List[Season]] = relationship("Season", back_populates="parent", cascade="all, delete-orphan")
+    show_id: Mapped[int] = mapped_column(primary_key=True)
+    seasons: Mapped[List["Season"]] = relationship(back_populates="parent", cascade="all, delete-orphan")
+    _fk_media_item: Mapped["MediaItem"] = mapped_column(sqlalchemy.ForeignKey("MediaItem._id"))
     def __init__(self, item):
         super().__init__(item)
         self.type = "show"
