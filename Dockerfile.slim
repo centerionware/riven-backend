@@ -4,7 +4,7 @@ LABEL name="Riven" \
       url="https://github.com/rivenmedia/riven"
 
 # Install system dependencies
-RUN apk --update add --no-cache curl bash shadow gcc python3-dev musl-dev linux-headers patchelf clang ccache && \
+RUN apk --update add --no-cache curl bash shadow gcc libpq-dev python3-dev musl-dev linux-headers patchelf clang ccache && \
     rm -rf /var/cache/apk/*
 RUN pip install --upgrade pip && pip install poetry==1.8.3
 
