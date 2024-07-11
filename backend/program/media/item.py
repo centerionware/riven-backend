@@ -88,7 +88,7 @@ class MediaItem(db.Model):
         self.is_anime = item.get("is_anime", False)
 
         # Media related
-        self.title = self.clean_title(item.get("title", None))
+        self.title = item.get("title", None)
         self.imdb_id =  item.get("imdb_id", None)
         if self.imdb_id:
             self.imdb_link = f"https://www.imdb.com/title/{self.imdb_id}/"
