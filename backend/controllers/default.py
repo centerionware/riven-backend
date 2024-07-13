@@ -7,9 +7,9 @@ from program.media.state import States
 from program.scrapers import Scraping
 from program.settings.manager import settings_manager
 from program.media.item import Episode, MediaItem, Movie, Season, Show
-from program.db.db import db, _get_item_from_db
+from program.db.db import db, 
 from sqlalchemy import select, func
-
+import program.db.db_functions as DB
 router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
@@ -137,7 +137,7 @@ async def get_stats(request: Request):
 @router.get("/scrape/{item_id:path}")
 async def scrape_item(item_id: str, request: Request):
     with db.Session() as session:
-        _get_item_from_db(session, MediaItem({"imdb_id":str}))
+        DB._get_item_from_db(session, MediaItem({"imdb_id":str}))
         if item is None:
             raise HTTPException(status_code=404, detail="Item not found")
         
