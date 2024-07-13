@@ -8,7 +8,8 @@ from program.settings.models import AppModel
 from requests import ConnectTimeout, ReadTimeout
 from requests.exceptions import RequestException
 from utils.logger import logger
-from utils.request import RateLimiter, RateLimitExceeded, ping, post
+from utils.request import ping, post
+from utils.ratelimiter import RateLimiter, RateLimitExceeded
 
 
 class Zilean:
@@ -45,7 +46,7 @@ class Zilean:
         try:
             url = f"{self.settings.url}/healthchecks/ping"
             response = ping(url=url, timeout=self.timeout)
-            return response.ok
+            return response.is_ok
         except Exception as e:
             logger.error(f"Zilean failed to initialize: {e}")
             return False

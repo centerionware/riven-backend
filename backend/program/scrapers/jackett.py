@@ -12,7 +12,7 @@ from program.settings.manager import settings_manager
 from pydantic import BaseModel
 from requests import HTTPError, ReadTimeout, RequestException, Timeout
 from utils.logger import logger
-from utils.request import RateLimiter, RateLimitExceeded
+from utils.ratelimiter import RateLimiter, RateLimitExceeded
 
 
 class JackettIndexer(BaseModel):
@@ -62,7 +62,7 @@ class Jackett:
                     return False
                 self.indexers = indexers
                 if self.rate_limit:
-                    self.second_limiter = RateLimiter(max_calls=len(self.indexers), period=self.settings.limiter_seconds)
+                    self.second_limiter = RateLimiter(max_calls=len(self.indexers), period=2)
                 self._log_indexers()
                 return True
             except ReadTimeout:
@@ -203,8 +203,6 @@ class Jackett:
             return item.get_top_title(), item.number, None
         elif isinstance(item, Episode):
             return item.get_top_title(), item.parent.number, item.number
-        elif isinstance(item, Show):
-            return item.get_top_title(), None, None
         return "", 0, None
 
     def _get_indexers(self) -> List[JackettIndexer]:
