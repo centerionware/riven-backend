@@ -221,8 +221,8 @@ async def remove_item(
                 "API", f"Removed symlink for item with {id_type} {item_id or imdb_id}"
             )
 
-                session.delete(item)
-                session.commit()
+            session.delete(item)
+            session.commit()
 
             return {
                 "success": True,
