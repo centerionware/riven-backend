@@ -6,6 +6,7 @@ from program.content.trakt import TraktContent
 from program.media.state import States
 from program.scrapers import Scraping
 from program.settings.manager import settings_manager
+from program.media.item import Episode, MediaItem, Movie, Season, Show
 from program.db.db import db, _get_item_from_db
 from sqlalchemy import select, func
 
