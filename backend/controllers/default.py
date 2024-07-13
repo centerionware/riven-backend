@@ -7,7 +7,7 @@ from program.media.state import States
 from program.scrapers import Scraping
 from program.settings.manager import settings_manager
 from program.media.item import Episode, MediaItem, Movie, Season, Show
-from program.db.db import db, 
+from program.db.db import db
 from sqlalchemy import select, func
 import program.db.db_functions as DB
 router = APIRouter(
