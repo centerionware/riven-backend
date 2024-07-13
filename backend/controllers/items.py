@@ -10,6 +10,10 @@ from program.symlink import Symlinker
 from pydantic import BaseModel
 from utils.logger import logger
 
+from program.db.db import db, _get_item_from_db
+from sqlalchemy import select, func
+
+
 router = APIRouter(
     prefix="/items",
     tags=["items"],
@@ -61,85 +65,86 @@ async def get_items(
     - Filter items by state: /items?state=completed
     - Filter items by type: /items?type=movie
     """
-    items = list(request.app.program.media_items._items.values())
+    with db.Session() as session:
+        items = session.execute(select(MediaItem)).unique().scalars().all()
 
-    if search:
-        search_lower = search.lower()
-        filtered_items = []
-        if search_lower.startswith("tt"):
-            item = request.app.program.media_items.get_item(search_lower)
-            if item:
-                filtered_items.append(item)
+        if search:
+            search_lower = search.lower()
+            filtered_items = []
+            if search_lower.startswith("tt"):
+                item = session.execute(select(MediaItem).where(MediaItem.item_id==search_lower)).unique().scalars().all()
+                if item:
+                    filtered_items.append(item)
+                else:
+                    raise HTTPException(status_code=404, detail="Item not found.")
             else:
-                raise HTTPException(status_code=404, detail="Item not found.")
-        else:
-            for item in items:
-                if isinstance(item, MediaItem):
-                    title_match = item.title and Levenshtein.distance(search_lower, item.title.lower()) <= 0.90
-                    imdb_match = item.imdb_id and Levenshtein.distance(search_lower, item.imdb_id.lower()) <= 1
-                    if title_match or imdb_match:
-                        filtered_items.append(item)
-        items = filtered_items
+                for item in items:
+                    if isinstance(item, MediaItem):
+                        title_match = item.title and Levenshtein.distance(search_lower, item.title.lower()) <= 0.90
+                        imdb_match = item.imdb_id and Levenshtein.distance(search_lower, item.imdb_id.lower()) <= 1
+                        if title_match or imdb_match:
+                            filtered_items.append(item)
+            items = filtered_items
 
-    if type:
-        type_lower = type.lower()
-        if type_lower == "movie":
-            items = list(request.app.program.media_items.movies.values())
-        elif type_lower == "show":
-            items = list(request.app.program.media_items.shows.values())
-        elif type_lower == "season":
-            items = list(request.app.program.media_items.seasons.values())
-        elif type_lower == "episode":
-            items = list(request.app.program.media_items.episodes.values())
-        else:
-            raise HTTPException(status_code=400, detail=f"Invalid type: {type}. Valid types are: ['movie', 'show', 'season', 'episode']")
+        if type:
+            type_lower = type.lower()
+            if type_lower == "movie":
+                items = session.execute(select(Movie)).unique().scalars().all()
+            elif type_lower == "show":
+                items = session.execute(select(Show)).unique().scalars().all()
+            elif type_lower == "season":
+                items = session.execute(select(Season)).unique().scalars().all()
+            elif type_lower == "episode":
+                items = session.execute(select(Episode)).unique().scalars().all()
+            else:
+                raise HTTPException(status_code=400, detail=f"Invalid type: {type}. Valid types are: ['movie', 'show', 'season', 'episode']")
 
-    if state:
-        filter_lower = state.lower()
-        filter_state = None
-        for state in States:
-            if Levenshtein.distance(filter_lower, state.name.lower()) <= 0.82:
-                filter_state = state
-                break
-        if filter_state:
-            items = [item for item in items if item.state == filter_state]
-        else:
-            valid_states = [state.name for state in States]
-            raise HTTPException(status_code=400, detail=f"Invalid filter state: {state}. Valid states are: {valid_states}")
+        if state:
+            filter_lower = state.lower()
+            filter_state = None
+            for state in States:
+                if Levenshtein.distance(filter_lower, state.name.lower()) <= 0.82:
+                    filter_state = state
+                    break
+            if filter_state:
+                items = [item for item in items if item.state == filter_state]
+            else:
+                valid_states = [state.name for state in States]
+                raise HTTPException(status_code=400, detail=f"Invalid filter state: {state}. Valid states are: {valid_states}")
 
-    if not fetch_all:
-        if page < 1:
-            raise HTTPException(status_code=400, detail="Page number must be 1 or greater.")
-        if limit < 1:
-            raise HTTPException(status_code=400, detail="Limit must be 1 or greater.")
-        
-        start = (page - 1) * limit
-        end = start + limit
-        items = items[start:end]
+        if not fetch_all:
+            if page < 1:
+                raise HTTPException(status_code=400, detail="Page number must be 1 or greater.")
+            if limit < 1:
+                raise HTTPException(status_code=400, detail="Limit must be 1 or greater.")
+            
+            start = (page - 1) * limit
+            end = start + limit
+            items = items[start:end]
 
-    total_count = len(items)
-    total_pages = (total_count + limit - 1) // limit
+        total_count = len(items)
+        total_pages = (total_count + limit - 1) // limit
 
-    return {
-        "success": True,
-        "items": [item.to_dict() for item in items],
-        "page": page,
-        "limit": limit,
-        "total": total_count,
-        "total_pages": total_pages
-    }
+        return {
+            "success": True,
+            "items": [item.to_dict() for item in items],
+            "page": page,
+            "limit": limit,
+            "total": total_count,
+            "total_pages": total_pages
+        }
 
 
 @router.get("/extended/{item_id}")
 async def get_extended_item_info(request: Request, item_id: str):
-    mic: MediaItemContainer = request.app.program.media_items
-    item = mic.get(item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Item not found")
-    return {
-        "success": True,
-        "item": item.to_extended_dict(),
-    }
+    with db.Session as Session:
+        item = _get_item_from_db(MediaItem({"imdb_id":item_id}))
+        if item is None:
+            raise HTTPException(status_code=404, detail="Item not found")
+        return {
+            "success": True,
+            "item": item.to_extended_dict(),
+        }
 
 
 @router.post("/add/imdb/{imdb_id}")
@@ -173,43 +178,42 @@ async def remove_item(
     item_id: Optional[str] = None,
     imdb_id: Optional[str] = None
 ):
-    if item_id:
-        item = request.app.program.media_items.get(item_id)
-        id_type = "ID"
-    elif imdb_id:
-        item = next((i for i in request.app.program.media_items if i.imdb_id == imdb_id), None)
-        id_type = "IMDb ID"
-    else:
-        raise HTTPException(status_code=400, detail="No item ID or IMDb ID provided")
+    with db.Session() as session:
+        if item_id:
+            item = session.execute(select(MediaItem).where(MediaItem.item_id==item_id)).unique().scalar_one()
+            id_type = "ID"
+        elif imdb_id:
+            item = session.execute(select(MediaItem).where(MediaItem.imdb_id==imdb_id)).unique().scalar_one()
+            id_type = "IMDb ID"
+        else:
+            raise HTTPException(status_code=400, detail="No item ID or IMDb ID provided")
 
-    if not item:
-        logger.error(f"Item with {id_type} {item_id or imdb_id} not found")
-        return {
-            "success": False,
-            "message": f"Item with {id_type} {item_id or imdb_id} not found. No action taken."
-        }
+        if not item:
+            logger.error(f"Item with {id_type} {item_id or imdb_id} not found")
+            return {
+                "success": False,
+                "message": f"Item with {id_type} {item_id or imdb_id} not found. No action taken."
+            }
 
-    try:
-        # Remove the item from the media items container
-        request.app.program.media_items.remove([item])
-        logger.log("API", f"Removed item with {id_type} {item_id or imdb_id}")
+        try:
+            # Remove the item from the media items container
+            
+            logger.log("API", f"Removed item with {id_type} {item_id or imdb_id}")
 
-        # Remove the symlinks associated with the item
-        symlinker = request.app.program.service[Symlinker]
-        symlinker.delete_item_symlinks(item)
-        logger.log("API", f"Removed symlink for item with {id_type} {item_id or imdb_id}")
+            # Remove the symlinks associated with the item
+            symlinker = request.app.program.service[Symlinker]
+            symlinker.delete_item_symlinks(item)
+            logger.log("API", f"Removed symlink for item with {id_type} {item_id or imdb_id}")
 
-        # Save and reload the media items to ensure consistency
-        symlinker.save_and_reload_media_items(request.app.program.media_items)
-        logger.log("API", f"Saved and reloaded media items after removing item with {id_type} {item_id or imdb_id}")
-
-        return {
-            "success": True,
-            "message": f"Successfully removed item with {id_type} {item_id or imdb_id}."
-        }
-    except Exception as e:
-        logger.error(f"Failed to remove item with {id_type} {item_id or imdb_id}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+            session.delete(item)
+            session.commit()
+            return {
+                "success": True,
+                "message": f"Successfully removed item with {id_type} {item_id or imdb_id}."
+            }
+        except Exception as e:
+            logger.error(f"Failed to remove item with {id_type} {item_id or imdb_id}: {e}")
+            raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/imdb/{imdb_id}")
 async def get_imdb_info(request: Request, imdb_id: str, season: Optional[int] = None, episode: Optional[int] = None):
@@ -222,28 +226,25 @@ async def get_imdb_info(request: Request, imdb_id: str, season: Optional[int] = 
         item_id = str(season) #, parent_id=item_id)
     if episode is not None:
         item_id = str(episode) #,  parent_id=item_id)
-    
-    item = request.app.program.media_items.get_item(item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Item not found")
+    with db.Session() as Session: 
+        item = _get_item_from_db(session, MediaItem({"imdb_id":item_id}))
+        if item is None:
+            raise HTTPException(status_code=404, detail="Item not found")
 
-    return {"success": True, "item": item.to_extended_dict()}
+        return {"success": True, "item": item.to_extended_dict()}
 
 
 @router.get("/incomplete")
 async def get_incomplete_items(request: Request):
-    if not hasattr(request.app, 'program') or not hasattr(request.app.program, 'media_items'):
-        logger.error("Program or media_items not found in the request app")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    with db.Session() as session:
+        _incomplete_items = session.execute(select(MediaItem).where(MediaItem.last_state != "Completed")).unique().scalars().all()
+        if not incomplete_items:
+            return {
+                "success": True,
+                "incomplete_items": []
+            }
 
-    incomplete_items = request.app.program.media_items.get_incomplete_items()
-    if not incomplete_items:
         return {
             "success": True,
-            "incomplete_items": []
+            "incomplete_items": [item.to_dict() for item in incomplete_items.values()]
         }
-
-    return {
-        "success": True,
-        "incomplete_items": [item.to_dict() for item in incomplete_items.values()]
-    }
